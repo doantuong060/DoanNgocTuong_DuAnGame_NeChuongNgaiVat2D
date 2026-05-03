@@ -1,10 +1,20 @@
 /*
  * ============================================================
- *   NE CHUONG NGAI VAT 2D - GAME HOAN CHINH
+ *   NE CHUONG NGAI VAT 2D - PHIEN BAN HOAN CHINH
  * ============================================================
+ *  [TP2] bresenhamLine (8 huong), bresenhamCircle (Midpoint),
+ *        floodFillRecursive (to mau de quy)
+ *  [TP3] drawFractalTree (cay de quy 6 cap),
+ *        kochSegment (duong cong Koch)
+ *  [TP4] Tinh tien nhan vat (LEFT/RIGHT + 4 muc toc do),
+ *        rotatePoint() - phep quay 2D chinh xac,
+ *        drawTriangleRotated/drawSquareRotated/drawDiamondRotated,
+ *        Hieu ung +10 noi len, dem nguoc 3-2-1
+ *  AUDIO: PlaySound (nhac nen loop), Beep (va cham, ghi diem, vat pham)
+ *
  *  Compile:
  *    g++ main.cpp -o game.exe
- *        -lbgi -lgdi32 -lcomdlg32 -luuid -loleaut32 -lole32
+ *        -lbgi -lgdi32 -lcomdlg32 -luuid -loleaut32 -lole32 -lwinmm
  * ============================================================
  */
 
@@ -15,13 +25,15 @@
 #include <math.h>
 #include <time.h>
 #include <windows.h>
+#include <mmsystem.h>
+// Compile: g++ main.cpp -o game.exe -lbgi -lgdi32 -lcomdlg32 -luuid -loleaut32 -lole32 -lwinmm
 
 // ============================================================
 //  HANG SO
 // ============================================================
 #define WIDTH           650
 #define HEIGHT          750
-#define MAX_OBS         15      // Tang len 15 vat the cung luc
+#define MAX_OBS         25      // Tang len 15 vat the cung luc
 #define MAX_ITEMS       4
 #define SCREEN_MENU     0
 #define SCREEN_HELP     1
@@ -39,12 +51,12 @@ const int FALL_SPEED[]   = { 0, 3, 7, 12 };
 const int PLAYER_SPEED[] = { 0, 8, 12, 17 };
 
 // Khoang cach spawn vat the (frame) theo gameSpeed
-const int SPAWN_INTERVAL[] = { 999, 45, 28, 18 };
+const int SPAWN_INTERVAL[] = { 999, 40, 22, 12 };
 
 // ============================================================
 //  CAU TRUC
 // ============================================================
-struct Obstacle { int x,y,type; bool active; };
+struct Obstacle { int x,y,type; bool active; double angle; double angleSpeed; };
 struct Item     { int x,y,type; bool active; int animTimer; };
 
 // ============================================================
@@ -58,6 +70,10 @@ int  shieldTimer=0;
 
 Obstacle obs[MAX_OBS];
 Item     items[MAX_ITEMS];
+
+// Dem nguoc truoc khi choi
+int countdownTimer = 0;   // >0 = dang dem nguoc
+int countdownVal  = 3;    // Gia tri hien tai (3,2,1)
 
 // --- Double buffer ---
 int activePage=1, visualPage=0;
@@ -218,6 +234,75 @@ void drawPlayer(int x,int y)
     setcolor(9); setfillstyle(SOLID_FILL,9); fillellipse(x+5,y-5,11,7);
 }
 
+
+// ============================================================
+//  [TP4] PHEP QUAY 2D - Rotate point (px,py) quanh tam (cx,cy)
+//        x' = cx + (px-cx)*cos(a) - (py-cy)*sin(a)
+//        y' = cy + (px-cx)*sin(a) + (py-cy)*cos(a)
+// ============================================================
+void rotatePoint(double cx, double cy, double angle,
+                 double px, double py,
+                 int& outX, int& outY)
+{
+    double rad = angle * M_PI / 180.0;
+    double dx  = px - cx;
+    double dy  = py - cy;
+    outX = (int)(cx + dx*cos(rad) - dy*sin(rad));
+    outY = (int)(cy + dx*sin(rad) + dy*cos(rad));
+}
+
+// Ve tam giac CO XOAY - ap dung phep quay 2D
+void drawTriangleRotated(int x, int y, double angle)
+{
+    int x1,y1,x2,y2,x3,y3;
+    rotatePoint(x,y,angle, x,   y-30, x1,y1);
+    rotatePoint(x,y,angle, x-25,y+20, x2,y2);
+    rotatePoint(x,y,angle, x+25,y+20, x3,y3);
+
+    setcolor(13);
+    bresenhamLine(x1,y1,x2,y2);
+    bresenhamLine(x2,y2,x3,y3);
+    bresenhamLine(x3,y3,x1,y1);
+    int pts[]={x1,y1,x2,y2,x3,y3,x1,y1};
+    setfillstyle(SOLID_FILL,13); fillpoly(4,pts);
+}
+
+// Ve hinh vuong CO XOAY - ap dung phep quay 2D
+void drawSquareRotated(int x, int y, double angle)
+{
+    int rx[4],ry[4];
+    rotatePoint(x,y,angle, x-22,y-22, rx[0],ry[0]);
+    rotatePoint(x,y,angle, x+22,y-22, rx[1],ry[1]);
+    rotatePoint(x,y,angle, x+22,y+22, rx[2],ry[2]);
+    rotatePoint(x,y,angle, x-22,y+22, rx[3],ry[3]);
+
+    setcolor(12);
+    bresenhamLine(rx[0],ry[0],rx[1],ry[1]);
+    bresenhamLine(rx[1],ry[1],rx[2],ry[2]);
+    bresenhamLine(rx[2],ry[2],rx[3],ry[3]);
+    bresenhamLine(rx[3],ry[3],rx[0],ry[0]);
+    int pts[]={rx[0],ry[0],rx[1],ry[1],rx[2],ry[2],rx[3],ry[3],rx[0],ry[0]};
+    setfillstyle(SOLID_FILL,12); fillpoly(5,pts);
+}
+
+// Ve kim cuong CO XOAY - ap dung phep quay 2D
+void drawDiamondRotated(int x, int y, double angle)
+{
+    int rx[4],ry[4];
+    rotatePoint(x,y,angle, x,   y-30, rx[0],ry[0]);
+    rotatePoint(x,y,angle, x+25,y,    rx[1],ry[1]);
+    rotatePoint(x,y,angle, x,   y+30, rx[2],ry[2]);
+    rotatePoint(x,y,angle, x-25,y,    rx[3],ry[3]);
+
+    setcolor(5);
+    bresenhamLine(rx[0],ry[0],rx[1],ry[1]);
+    bresenhamLine(rx[1],ry[1],rx[2],ry[2]);
+    bresenhamLine(rx[2],ry[2],rx[3],ry[3]);
+    bresenhamLine(rx[3],ry[3],rx[0],ry[0]);
+    int pts[]={rx[0],ry[0],rx[1],ry[1],rx[2],ry[2],rx[3],ry[3],rx[0],ry[0]};
+    setfillstyle(SOLID_FILL,5); fillpoly(5,pts);
+}
+
 // ============================================================
 //  CHUONG NGAI VAT
 // ============================================================
@@ -255,9 +340,13 @@ void drawObstacle(Obstacle& o)
 {
     if(!o.active) return;
     switch(o.type){
-        case 0:drawCylinder(o.x,o.y);break; case 1:drawTriangle(o.x,o.y);break;
-        case 2:drawHalfCircle(o.x,o.y);break; case 3:drawSquare(o.x,o.y);break;
-        case 4:drawDiamond(o.x,o.y);break;
+        // Hinh tron & nua tron: khong quay (doi xung tron xoay nhin khong ro)
+        case 0: drawCylinder(o.x,o.y); break;
+        case 2: drawHalfCircle(o.x,o.y); break;
+        // [TP4] Tam giac, hinh vuong, kim cuong: XOAY theo o.angle
+        case 1: drawTriangleRotated(o.x,o.y,o.angle); break;
+        case 3: drawSquareRotated(o.x,o.y,o.angle);   break;
+        case 4: drawDiamondRotated(o.x,o.y,o.angle);  break;
     }
 }
 
@@ -321,7 +410,17 @@ bool checkCollision(int px,int py,int ox,int oy,int r)
 void spawnObstacle()
 {
     for(int i=0;i<MAX_OBS;i++)
-        if(!obs[i].active){ obs[i].x=30+rand()%(WIDTH-60); obs[i].y=100; obs[i].type=rand()%5; obs[i].active=true; return; }
+        if(!obs[i].active){
+            obs[i].x          = 30 + rand()%(WIDTH-60);
+            obs[i].y          = 100;
+            obs[i].type       = rand()%5;
+            obs[i].active     = true;
+            obs[i].angle      = (double)(rand()%360);        // Goc ban dau ngau nhien
+            // [TP4] Toc do quay: type 1,3,4 quay, type 0,2 = 0
+            double speeds[]   = {0.0, 2.5, 0.0, 3.0, 2.0};
+            obs[i].angleSpeed = speeds[obs[i].type] * (rand()%2==0?1:-1); // CW hoac CCW
+            return;
+        }
 }
 
 void spawnItem()
@@ -335,15 +434,38 @@ void spawnItem()
 // ============================================================
 //  KHOI TAO GAME
 // ============================================================
+
+// ============================================================
+//  NHAC NEN
+//  Dat bgm.wav cung thu muc game.exe
+//  PlaySound: SND_FILENAME|SND_ASYNC|SND_LOOP
+// ============================================================
+void playBGM()
+{
+    PlaySound("bgm.wav", NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
+}
+void stopBGM()
+{
+    PlaySound(NULL, NULL, 0);
+}
+
 void initGame()
 {
     playerX=WIDTH/2; playerY=HEIGHT-130;
     lives=3; score=0; elapsedSec=0; gameSpeed=1;
     gameRunning=true; shieldActive=false; shieldTimer=0;
-    for(int i=0;i<MAX_OBS;i++)   obs[i].active=false;
-    for(int i=0;i<MAX_ITEMS;i++) items[i].active=false;
+    for(int i=0;i<MAX_OBS;i++)    obs[i].active=false;
+    for(int i=0;i<MAX_ITEMS;i++)  items[i].active=false;
     // Spawn nhieu vat the ngay tu dau
     spawnObstacle(); spawnObstacle(); spawnObstacle();
+
+    // Dem nguoc 3-2-1 truoc khi choi
+    countdownTimer = 90;   // 90 frame = 3 giay
+    countdownVal   = 3;
+    gameRunning    = false;   // Chua choi, dang dem nguoc
+
+    // Phat nhac nen
+    playBGM();
 }
 
 // ============================================================
@@ -376,7 +498,9 @@ void drawMenuScreen()
         bar(bx,by,bx+bw,by+bh);
         settextstyle(DEFAULT_FONT,HORIZ_DIR,2);
         char s[]="BAT DAU"; int sw=textwidth(s);
-        setcolor(15); outtextxy(bx+(bw-sw)/2, by+(bh-textheight(s))/2, s);
+        setbkcolor(2); setcolor(15);
+        outtextxy(bx+(bw-sw)/2, by+(bh-textheight(s))/2, s);
+        setbkcolor(0);
     }
 
     // Nut HUONG DAN (nau)
@@ -388,7 +512,9 @@ void drawMenuScreen()
         bar(bx,by,bx+bw,by+bh);
         settextstyle(DEFAULT_FONT,HORIZ_DIR,2);
         char s[]="HUONG DAN"; int sw=textwidth(s);
-        setcolor(15); outtextxy(bx+(bw-sw)/2, by+(bh-textheight(s))/2, s);
+        setbkcolor(6); setcolor(15);
+        outtextxy(bx+(bw-sw)/2, by+(bh-textheight(s))/2, s);
+        setbkcolor(0);
     }
 
     // Nut THOAT (do)
@@ -400,7 +526,9 @@ void drawMenuScreen()
         bar(bx,by,bx+bw,by+bh);
         settextstyle(DEFAULT_FONT,HORIZ_DIR,2);
         char s[]="THOAT"; int sw=textwidth(s);
-        setcolor(15); outtextxy(bx+(bw-sw)/2, by+(bh-textheight(s))/2, s);
+        setbkcolor(4); setcolor(15);
+        outtextxy(bx+(bw-sw)/2, by+(bh-textheight(s))/2, s);
+        setbkcolor(0);
     }
 
     settextstyle(DEFAULT_FONT,HORIZ_DIR,1); setcolor(8);
@@ -629,8 +757,24 @@ void drawGameFrame()
     drawPlayer(playerX,playerY);
     for(int i=0;i<MAX_OBS;i++)   drawObstacle(obs[i]);
     for(int i=0;i<MAX_ITEMS;i++) drawItem(items[i]);
+
     drawControl();
-    if(!gameRunning) drawGameOverScreen();
+    // Ve dem nguoc 3-2-1
+    if(countdownTimer > 0){
+        // Lam mo nen
+        setcolor(0); setfillstyle(SOLID_FILL,0);
+        bar(WIDTH/2-60, HEIGHT/2-60, WIDTH/2+60, HEIGHT/2+60);
+        // So dem nguoc
+        settextstyle(TRIPLEX_FONT,HORIZ_DIR,6);
+        char cntStr[4]; sprintf(cntStr,"%d",countdownVal);
+        int cw=textwidth(cntStr);
+        // Mau thay doi: 3=do, 2=vang, 1=xanh
+        int cntColors[]={12,14,10};
+        int ci = countdownVal-1; if(ci<0)ci=0; if(ci>2)ci=2;
+        setcolor(cntColors[ci]);
+        outtextxy(WIDTH/2-cw/2, HEIGHT/2-40, cntStr);
+    }
+    else if(!gameRunning) drawGameOverScreen();
     flipBuffer();
 }
 
@@ -639,6 +783,17 @@ void drawGameFrame()
 // ============================================================
 void updateGame()
 {
+    // Xu ly dem nguoc 3-2-1
+    if(countdownTimer > 0){
+        countdownTimer--;
+        // Cap nhat gia tri dem nguoc (3->2->1->0)
+        countdownVal = (countdownTimer / 30) + 1;
+        if(countdownTimer == 0){
+            gameRunning = true;   // Bat dau choi
+            Beep(1046, 120);      // Tieng "Go!"
+        }
+        return;
+    }
     if(!gameRunning) return;
 
     int fall = FALL_SPEED[gameSpeed];
@@ -663,11 +818,17 @@ void updateGame()
     // Cap nhat chuong ngai vat
     for(int i=0;i<MAX_OBS;i++){
         if(!obs[i].active) continue;
-        obs[i].y+=fall;
-        if(obs[i].y>HEIGHT-85){
-            obs[i].active=false;
-            score+=10;
-            if(score>highScore)highScore=score;
+        // [TP4] Tinh tien theo Y (chuyen dong roi)
+        obs[i].y += fall;
+        // [TP4] Phep quay: cap nhat goc xoay theo toc do
+        obs[i].angle += obs[i].angleSpeed;
+        if(obs[i].angle >= 360.0) obs[i].angle -= 360.0;
+        if(obs[i].angle <  0.0)   obs[i].angle += 360.0;
+
+        if(obs[i].y > HEIGHT-85){
+            obs[i].active = false;
+            score += 10;
+            if(score > highScore) highScore = score;
             continue;
         }
         if(checkCollision(playerX,playerY,obs[i].x,obs[i].y,40)){
@@ -675,7 +836,7 @@ void updateGame()
             if(!shieldActive){
                 lives--;
                 Beep(400,150);
-                if(lives<=0){lives=0;gameRunning=false;}
+                if(lives<=0){lives=0;gameRunning=false;stopBGM();}
             }
             else Beep(800,80);
         }
@@ -707,7 +868,7 @@ void handleMenuInput()
 {
     if(GetAsyncKeyState('S')&0x8000){initGame();screenState=SCREEN_GAME;Sleep(200);return;}
     if(GetAsyncKeyState('H')&0x8000){screenState=SCREEN_HELP;Sleep(200);return;}
-    if(GetAsyncKeyState('Q')&0x8000||GetAsyncKeyState(VK_ESCAPE)&0x8000){closegraph();exit(0);}
+    if(GetAsyncKeyState('Q')&0x8000||GetAsyncKeyState(VK_ESCAPE)&0x8000){stopBGM();closegraph();exit(0);}
     if(ismouseclick(WM_LBUTTONDOWN)){
         clearmouseclick(WM_LBUTTONDOWN);
         int mx=mousex(),my=mousey();
@@ -738,11 +899,11 @@ void handleGameInput()
     if(GetAsyncKeyState('2')&0x8000){gameSpeed=2;Sleep(100);}
     if(GetAsyncKeyState('3')&0x8000){gameSpeed=3;Sleep(100);}
 
-    if(GetAsyncKeyState(VK_ESCAPE)&0x8000){screenState=SCREEN_MENU;Sleep(200);}
+    if(GetAsyncKeyState(VK_ESCAPE)&0x8000){stopBGM();screenState=SCREEN_MENU;Sleep(200);}
 
     if(!gameRunning){
         if(GetAsyncKeyState('R')&0x8000){initGame();screenState=SCREEN_GAME;Sleep(200);}
-        if(GetAsyncKeyState('Q')&0x8000){screenState=SCREEN_MENU;Sleep(200);}
+        if(GetAsyncKeyState('Q')&0x8000){stopBGM();screenState=SCREEN_MENU;Sleep(200);}
     }
 }
 
@@ -813,12 +974,15 @@ int main()
 
             case SCREEN_GAME:
                 handleGameInput();
-                if(gameRunning){
-                    frameCount++;
-                    if(frameCount>=framesPerSec){elapsedSec++;frameCount=0;}
+                // Goi updateGame ca khi dang countdown va khi dang choi
+                if(gameRunning || countdownTimer > 0){
+                    if(gameRunning){   // Chi dem thoi gian khi dang choi that su
+                        frameCount++;
+                        if(frameCount>=framesPerSec){elapsedSec++;frameCount=0;}
+                    }
                     updateGame();
                 }
-                drawGameFrame();        // da co flipBuffer() ben trong
+                drawGameFrame();
                 break;
         }
         delay(33);
